@@ -45,7 +45,7 @@ async function run() {
         //middlewares
         const verifyToken = (req, res, next) => {
             console.log('inside verify token', req.headers.authorization);
-            if (!req.headers.authorization) {
+            if (!req.headers?.authorization) {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
             const token = req.headers.authorization.split(' ')[1];
@@ -230,6 +230,74 @@ async function run() {
             };
             const deleteResult = await cartsCollection.deleteMany(query)
             res.send({ paymentResult, deleteResult })
+        })
+
+        // stats or analytics
+        app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
+            const users = await usersCollection.estimatedDocumentCount();
+            const menuItems = await menuCollection.estimatedDocumentCount();
+            const orders = await paymentsCollection.estimatedDocumentCount();
+
+            // this is not the best way
+            // const payments = await paymentsCollection.find().toArray();
+            // const revenue = payments.reduce((total, payment) => total + payment.price, 0);
+
+            const result = await paymentsCollection.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalRevenue: {
+                            $sum: '$price'
+                        }
+                    }
+                }
+            ]).toArray();
+
+            const revenue = result.length > 0 ? result[0].totalRevenue : 0;
+
+            res.send({
+                users,
+                menuItems,
+                orders,
+                revenue,
+            })
+        });
+
+        // using aggregate pipeline
+        app.get('/order-stats', verifyToken, verifyAdmin, async (req, res) => {
+            const result = await paymentsCollection.aggregate([
+                {
+                    $unwind: '$menuItemIds'
+                },
+                {
+                    $lookup: {
+                        from: 'menu',
+                        localField: 'menuItemIds',
+                        foreignField: '_id',
+                        as: 'menuItems'
+                    }
+                },
+                {
+                    $unwind: '$menuItems'
+                },
+                {
+                    $group: {
+                        _id: '$menuItems.category',
+                        quantity: { $sum: 1 },
+                        revenue: { $sum: '$menuItems.price' }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        category: '$_id',
+                        quantity: '$quantity',
+                        revenue: '$revenue'
+                    }
+                }
+            ]).toArray()
+
+            res.send(result)
         })
 
         // Send a ping to confirm a successful connection
