@@ -4,6 +4,21 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+
+const formData = require('form-data');
+const Mailgun = require('mailgun.js');
+const mailgun = new Mailgun(formData);
+
+// const mg = mailgun.client({
+//     username: 'api',
+//     key: ' <private api key> ',
+// });
+
+const mg = mailgun.client({
+    username: 'api',
+    key: process.env.MAIL_GUN_API_KEY
+});
+
 const port = process.env.PORT || 5000;
 
 //middleware
@@ -228,7 +243,22 @@ async function run() {
                     $in: payment.cartIds.map(id => new ObjectId(id))
                 }
             };
-            const deleteResult = await cartsCollection.deleteMany(query)
+            const deleteResult = await cartsCollection.deleteMany(query);
+
+            // send user email about payment confirmation
+            mg.messages.create(process.env.MAIL_SENDING_DOMAIN, {
+                from: "Mailgun Sandbox <postmaster@sandbox27b212aeb52343aa80bc4d10b6785d9f.mailgun.org>",
+                to: ["anikbhowmik0188@gamil.com"],
+                subject: "Bistro Boss Order Confirmation",
+                text: "Testing some Mailgun awesomness!",
+                html: `<div>
+                        <h1> Thank you for your Order</h1>
+                        <h4> your Transaction ID: <strong>${payment?.transactionId}</strong></h4>
+                     </div > `
+            })
+                .then(msg => console.log(msg))
+                .catch(err => console.error(err));
+
             res.send({ paymentResult, deleteResult })
         })
 
